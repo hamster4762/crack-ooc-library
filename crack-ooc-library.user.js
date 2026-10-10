@@ -38,7 +38,10 @@
         !Array.isArray(value.categories) || !Array.isArray(value.extras)) throw Error('데이터 형식이 올바르지 않습니다.');
     const single = item => {
       if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).length !== 1) throw Error('항목 형식이 올바르지 않습니다.');
-      return one(item);
+      const pair = one(item);
+      if (/[.#$\[\]/\u0000-\u001f\u007f]/u.test(pair[0])) throw Error('이름에는 . # $ / [ ] 및 제어 문자를 사용할 수 없습니다.');
+      if (new TextEncoder().encode(pair[0]).length > 768) throw Error('이름은 UTF-8 기준 768바이트 이내여야 합니다.');
+      return pair;
     };
     const items = list => list.map(item => {
       const [name, content] = single(item);
@@ -57,21 +60,17 @@
       if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).length !== 1) throw Error('Firebase 항목 형식이 올바르지 않습니다.');
       return one(item);
     };
-    const key = direction === 'write' ? name => 'k_' + encodeURIComponent(name).replace(/[.!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase()) : name => {
-      if (!name.startsWith('k_')) throw Error('Firebase 데이터의 이름 형식이 올바르지 않습니다.');
-      return decodeURIComponent(name.slice(2));
-    };
     const list = values => {
       if (values == null) return [];
       if (!Array.isArray(values)) throw Error('Firebase 목록 형식이 올바르지 않습니다.');
-      return values.map(item => { const [name, text] = itemPair(item); return named(key(name), text); });
+      return values.map(item => { const [name, text] = itemPair(item); return named(name, text); });
     };
     if (value.categories != null && !Array.isArray(value.categories)) throw Error('Firebase 카테고리 형식이 올바르지 않습니다.');
     return { schemaVersion: value.schemaVersion, updatedAt: value.updatedAt,
       categories: (value.categories || []).map(item => {
         const [name, children] = itemPair(item);
         const entries = direction === 'read' && children === false ? [] : list(children);
-        return named(key(name), direction === 'write' && !entries.length ? false : entries);
+        return named(name, direction === 'write' && !entries.length ? false : entries);
       }),
       extras: list(value.extras) };
   }
@@ -266,7 +265,9 @@
     const symbol = node('span', 'oa-symbol'); symbol.innerHTML = svg(location.kind === 'folder' ? 'folder' : 'file'); root.append(symbol, node('span', 'oa-name', title));
     const tools = node('div', 'oa-row-actions'); const handle = action('순서 변경', () => {}, 'grip'); handle.dataset.sort = '';
     handle.addEventListener('pointerdown', event => startDrag(event, root, location));
-    tools.append(handle, action('편집', edit, 'edit'), action('삭제', remove, 'trash'));
+    tools.append(handle);
+    if (location.kind === 'folder') tools.append(action('이 카테고리에 OOC 추가', () => editOoc(location.category), 'plus'));
+    tools.append(action('편집', edit, 'edit'), action('삭제', remove, 'trash'));
     tools.querySelectorAll('button').forEach(button => { button.disabled = saving; }); root.append(tools); return root;
   }
   function drawTree(root, query) {
